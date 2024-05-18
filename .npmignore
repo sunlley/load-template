@@ -1,6 +1,7 @@
 src
 tslint.json
 .prettierrc
+.npmignore
 package-lock.json
 .idea
 .git
