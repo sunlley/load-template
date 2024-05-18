@@ -1,0 +1,50 @@
+{
+  "name": "load-template",
+  "version": "1.0.0",
+  "keywords": [
+    "nodejs",
+    "template",
+    "typescript",
+    "api"
+  ],
+  "description": "Create typescript apps with no build configuration.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sunlley/load-template",
+    "directory": ""
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "bugs": {
+    "url": "https://github.com/sunlley/load-template/issues"
+  },
+  "files": [
+    "test.js",
+    "index.js",
+    "load_template.js"
+  ],
+  "bin": {
+    "load-template": "./index.js"
+  },
+  "scripts": {
+    "test": "cross-env FORCE_COLOR=true jest"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "cross-spawn": "^7.0.3",
+    "envinfo": "^7.13.0",
+    "fs-extra": "^11.2.0",
+    "hyperquest": "^2.1.3",
+    "prompts": "^2.4.2",
+    "semver": "^7.6.2",
+    "tar-pack": "^3.4.1",
+    "tmp": "^0.2.3",
+    "validate-npm-package-name": "^5.0.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  }
+}
