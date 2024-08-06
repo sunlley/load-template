@@ -15,6 +15,31 @@ const hyperquest = require("hyperquest");
 const {unpack} = require("tar-pack");
 const spawn = require("cross-spawn");
 const tmp = require("tmp");
+const PACKAGE_BLACKLIST = [
+    'name',
+    'version',
+    'description',
+    'keywords',
+    'bugs',
+    'license',
+    'author',
+    'contributors',
+    'files',
+    'browser',
+    'bin',
+    'man',
+    'directories',
+    'repository',
+    'peerDependencies',
+    'bundledDependencies',
+    'optionalDependencies',
+    'engineStrict',
+    'os',
+    'cpu',
+    'preferGlobal',
+    'private',
+    'publishConfig',
+];
 
 const extractStream = (stream, dest) => {
     return new Promise((resolve, reject) => {
@@ -55,17 +80,36 @@ const getTemporaryDirectory = () => {
 }
 
 const move_template = (appPath,templateName) => {
+    // console.log('move_template',chalk.green(appPath))
+    // console.log('move_template',chalk.green(templateName))
     const appPackage = require(path.join(appPath, 'package.json'));
-
     const templatePath = path.dirname(
-        require.resolve(`${templateName}/package.json`, { paths: [appPath] })
-    );
+        require.resolve(`${templateName}/package.json`, { paths: [appPath] }));
     const templateJsonPath = path.join(templatePath, 'template.json');
+    const templatePackageJsonPath = path.join(templatePath, 'template','src','package.json');
+    // console.log('move_template','template.json',chalk.green(templateJsonPath))
+    // console.log('move_template','package.json ',chalk.green(templatePackageJsonPath))
+    // console.log('move_template','appPackage   ',appPackage)
+
+    let finalPackageJson={
+        ...appPackage
+    }
+    let devDependencies={
+        ...(appPackage.devDependencies??{})
+    };
+    let dependencies={
+        ...(appPackage.dependencies??{})
+    };
+    let scripts={
+        ...(appPackage.scripts??{})
+    };
+    // console.log('move_template','scripts   ',scripts)
+
+
     let templateJson = {};
     if (fs.existsSync(templateJsonPath)) {
         templateJson = require(templateJsonPath);
     }
-    const templatePackage = templateJson.package || {};
     if (templateJson.dependencies || templateJson.scripts) {
         console.log();
         console.log(
@@ -76,62 +120,56 @@ const move_template = (appPath,templateName) => {
         );
         console.log('For more information, visit https://cra.link/templates');
     }
-    const templatePackageBlacklist = [
-        'name',
-        'version',
-        'description',
-        'keywords',
-        'bugs',
-        'license',
-        'author',
-        'contributors',
-        'files',
-        'browser',
-        'bin',
-        'man',
-        'directories',
-        'repository',
-        'peerDependencies',
-        'bundledDependencies',
-        'optionalDependencies',
-        'engineStrict',
-        'os',
-        'cpu',
-        'preferGlobal',
-        'private',
-        'publishConfig',
-    ];
-    const templatePackageToMerge = ['dependencies', 'scripts'];
-    const templatePackageToReplace = Object.keys(templatePackage).filter(key => {
-        return (
-            !templatePackageBlacklist.includes(key) &&
-            !templatePackageToMerge.includes(key)
-        );
-    });
-    appPackage.dependencies = appPackage.dependencies || {};
-    const templateScripts = templatePackage.scripts || {};
-    appPackage.scripts = Object.assign(
-        {
-            start: 'echo start',
-            build: 'echo start'
-        },
-        templateScripts
-    );
-
-    // Setup the eslint config
-    appPackage.eslintConfig = {
-        extends: 'react-app',
-    };
-
-
-    // Add templatePackage keys/values to appPackage, replacing existing entries
-    templatePackageToReplace.forEach(key => {
-        appPackage[key] = templatePackage[key];
-    });
+    const templatePackage = templateJson.package || {};
+    if (fs.existsSync(templatePackageJsonPath)) {
+        let json = require(templatePackageJsonPath);
+        finalPackageJson={
+            ...json,
+            ...appPackage,
+        }
+        console.log('move_template','finalPackageJson2   ',finalPackageJson)
+        devDependencies={
+            ...devDependencies,
+            ...(json.devDependencies??{})
+        }
+        dependencies={
+            ...dependencies,
+            ...(json.dependencies??{})
+        }
+        scripts = Object.assign(
+            {
+                ...scripts,
+            },{
+                ...(json.scripts??{})
+            }
+        )
+    }
+    devDependencies={
+        ...devDependencies,
+        ...(templatePackage.devDependencies??{})
+    }
+    dependencies={
+        ...dependencies,
+        ...(templatePackage.dependencies??{})
+    }
+    scripts = Object.assign({
+            ...scripts,
+        },{...(templatePackage.scripts??{})})
+    finalPackageJson.scripts=scripts;
+    let dependenciesKeys=Object.keys(dependencies).sort();
+    let devDependenciesKeys=Object.keys(devDependencies).sort();
+    finalPackageJson.dependencies={}
+    finalPackageJson.devDependencies={};
+    for (const dependenciesKey of dependenciesKeys) {
+        finalPackageJson.dependencies[dependenciesKey]=dependencies[dependenciesKey];
+    }
+    for (const devDependenciesKey of devDependenciesKeys) {
+        finalPackageJson.devDependencies[devDependenciesKey]=devDependencies[devDependenciesKey];
+    }
 
     fs.writeFileSync(
         path.join(appPath, 'package.json'),
-        JSON.stringify(appPackage, null, 2) + os.EOL
+        JSON.stringify(finalPackageJson, null, 2) + os.EOL
     );
 
     const readmeExists = fs.existsSync(path.join(appPath, 'README.md'));
@@ -145,7 +183,15 @@ const move_template = (appPath,templateName) => {
     // Copy the files for the user
     const templateDir = path.join(templatePath, 'template');
     if (fs.existsSync(templateDir)) {
-        fs.copySync(templateDir, appPath);
+        fs.copySync(templateDir, appPath,{
+            filter:(file)=>{
+                // console.log('copySync filter',file)
+                if (file.endsWith('package.json')){
+                    return  false;
+                }
+                return true;
+            }
+        });
     } else {
         console.error(
             `Could not locate supplied template: ${chalk.green(templateDir)}`
@@ -162,15 +208,10 @@ const move_template = (appPath,templateName) => {
         // Rename gitignore after the fact to prevent npm from renaming it to .npmignore
         // See: https://github.com/npm/npm/issues/1862
         fs.moveSync(
-            path.join(appPath, 'gitignore'),
             path.join(appPath, '.gitignore'),
             []
         );
     }
-
-
-
-
 
 }
 const check_client_version = async (packagename) => {
@@ -182,8 +223,6 @@ const check_client_version = async (packagename) => {
                     let body = '';
                     res.on('data', data => (body += data));
                     res.on('end', () => {
-                        // console.log(body)
-                        //{"next":"5.1.0-next.14","latest":"5.0.1","canary":"3.3.0-next.38"}
                         resolve(JSON.parse(body).latest);
                     });
                 } else {
@@ -191,11 +230,9 @@ const check_client_version = async (packagename) => {
                 }
             }
         ).on('error', () => {
-            reject(new Error('Http error: unknown'));
+            reject(new Error('Http error: check client version request failed'));
         });
     });
-
-
 }
 const check_node_version = (version) => {
     const target_version = '18';
@@ -251,7 +288,7 @@ const check_project = (name, root) => {
         console.error(
             chalk.red(
                 `Cannot create a project named ${chalk.green(
-                    `"${appName}"`
+                    `"${name}"`
                 )} because of npm naming restrictions:\n`
             )
         );
@@ -414,7 +451,7 @@ const get_package_from_normal = (version, directory) => {
     return Promise.resolve(packageToInstall);
 }
 const get_package_from_template = (template, directory) => {
-    console.log('get_package_from_template','template',template)
+    // console.log('get_package_from_template','template',template)
     let templateToInstall = 'cra-template-liaapi-ts';
     if (template) {
         if (template.match(/^file:/)) {
@@ -456,14 +493,16 @@ const get_package_from_template = (template, directory) => {
                     // - @SCOPE/NAME
                     templateToInstall = `${scope}${templateToInstall}-${templateName}${version}`;
                 }
-            }else {
+            }else if (template.indexOf('cra-template-')>=0){
                 templateToInstall = template;
+            }else {
+                templateToInstall = `cra-template-${template}`;
             }
 
         }
     }
 
-    console.log('get_package_from_template',templateToInstall)
+    console.log('get_package_from_template',chalk.green(templateToInstall))
     return Promise.resolve(templateToInstall);
 
 }
@@ -541,113 +580,102 @@ const execute_script = (root,template) => {
     return new Promise((resolve, reject) => {
         move_template(root,template)
         resolve()
-
     });
 }
 /**
  *
  * @param name
- * @param verbose  --verbose
- * @param version  --scripts-version
- * @param template --template
+ * @param params
  */
-const create_project = async (name, verbose, template) => {
+const create_project = async (name, params) => {
+    let {verbose, template}=params;
     const root = path.resolve(name);
     const appName = path.basename(root);
-    // check_project(name,root);
-    fs.ensureDirSync(name);
-    console.log(`Creating a new React app in ${chalk.green(root)}.`);
+    check_project(name,root);
+    fs.ensureDirSync(name,{});
+    console.log(`Creating a new Application in ${chalk.green(root)}.`);
     const packageJson = {
         name: appName,
         version: '0.1.0',
         private: true,
-        devDependencies: {
-            "@types/node": "^20.8.9",
-            "nodemon": "^2.0.22",
-            "ts-node": "^10.9.1",
-            "tslib": "^2.6.2",
-            "typescript": "^5.2.2"
-        },
+        devDependencies: {},
         dependencies: {},
         eslintConfig: {
             "extends": []
         }
 
     };
-    const tsconfigJson = {
-        "compilerOptions": {
-            "experimentalDecorators": true,
-            "module": "CommonJS",
-            "target": "es2020",
-            "strict": true,
-            "jsx": "preserve",
-            "importHelpers": true,
-            "moduleResolution": "node",
-            "skipLibCheck": true,
-            "esModuleInterop": true,
-            "allowSyntheticDefaultImports": true,
-            "sourceMap": true,
-            "baseUrl": ".",
-            "outDir": "./output",
-            "rootDir": ".",
-            "types": [
-                "webpack-env",
-                "node"
-            ],
-            "resolveJsonModule": true,
-            "declaration": true,// 是否生成声明文件
-            "declarationDir": "dist/type",// 声明文件打包的位置
-            "lib": [
-                "esnext",
-                "es5",
-                "ES2016",
-                "ES2020",
-                "dom",
-                "dom.iterable",
-                "scripthost"
-            ]
-        },
-        "include": [
-            "__test__",
-            "src",
-            "src/**/*",
-            "global.d.ts"
-        ],
-        "exclude": [
-            "node_modules"
-        ]
-    };
-    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(packageJson, null, 2) + os.EOL);
-    fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfigJson, null, 2) + os.EOL);
     const originalDirectory = process.cwd();
     process.chdir(root);
-    let templateInfo = await get_package_from_template(template, originalDirectory);
-
-    await Promise.all([get_package_info(templateInfo)])
-        .then(([templateInfo]) => {
-            const dependencies = [Object.keys(packageJson.dependencies), templateInfo.name];
-            console.log(`Installing dependencies using ${chalk.cyan('npm')}.`)
-            for (const dependency of dependencies) {
-                if (dependency){
-                    console.log(`    - ${chalk.cyan(dependency)}`)
-                }
-            }
-            return install(root, dependencies, verbose)
-                .then(() => ({
-                    dependencies,templateInfo
-                }));
-        })
-        .then(async ({dependencies,templateInfo}) => {
-            // const packageName = packageInfo.name;
-            // const templateName = supportsTemplates ? templateInfo.name : undefined;
-            // check_node_support(packageName);
-            // set_deps_for_runtime(packageName);
-            console.log('Installing dependencies...', dependencies.join(' '))
-            await execute_script(root,templateInfo.name);
-            await install(root,[],verbose);
-        });
+    let templatePackageName = await get_package_from_template(template, originalDirectory);
+    if (templatePackageName.endsWith('-ts')){
+        packageJson.devDependencies={
+            "@types/node": "^22.1.0",
+            "nodemon": "^3.1.4",
+            "ts-node": "^10.9.2",
+            "tslib": "^2.6.3",
+            "typescript": "^5.5.4"
+        }
+        const tsconfigJson = {
+            "compilerOptions": {
+                "experimentalDecorators": true,
+                "module": "CommonJS",
+                "target": "es2020",
+                "strict": true,
+                "jsx": "preserve",
+                "importHelpers": true,
+                "moduleResolution": "node",
+                "skipLibCheck": true,
+                "esModuleInterop": true,
+                "allowSyntheticDefaultImports": true,
+                "sourceMap": true,
+                "baseUrl": ".",
+                "outDir": "./output",
+                "rootDir": ".",
+                "types": [
+                    "webpack-env",
+                    "node"
+                ],
+                "resolveJsonModule": true,
+                "declaration": true,// 是否生成声明文件
+                "declarationDir": "dist/type",// 声明文件打包的位置
+                "lib": [
+                    "esnext",
+                    "es5",
+                    "ES2016",
+                    "ES2020",
+                    "dom",
+                    "dom.iterable",
+                    "scripthost"
+                ]
+            },
+            "include": [
+                "__test__",
+                "src",
+                "src/**/*",
+                "global.d.ts"
+            ],
+            "exclude": [
+                "node_modules"
+            ]
+        };
+        fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfigJson, null, 2) + os.EOL);
+    }
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(packageJson, null, 2) + os.EOL);
+    let templateInfo = await get_package_info(templatePackageName);
+    const dependencies = [...(Object.keys(packageJson.dependencies)), templateInfo.name];
+    console.log(`Installing dependencies using ${chalk.cyan('npm')}.`)
+    for (const dependency of dependencies) {
+        if (dependency){
+            console.log(`    - ${chalk.cyan(dependency)}`)
+        }
+    }
+    await install(root,dependencies,verbose);
+    await execute_script(root,templateInfo.name);
+    await install(root,[],verbose);
     const appPackage = require(path.join(root, 'package.json'));
-    console.log(chalk.bgGreen(`Success! Created ${appName} at ${chalk.cyan(root)}`));
+    console.log(chalk.bgGreen(`😁 Success! `));
+    console.log(`Created ${appName} at ${chalk.cyan(root)}`);
     console.log('Inside that directory, you can run several commands:');
     for (const scriptsKey in appPackage.scripts) {
         console.log(`    ${chalk.cyan(scriptsKey)}`);
@@ -655,7 +683,7 @@ const create_project = async (name, verbose, template) => {
     console.log('-------------------------------')
     console.log(chalk.cyan(' - cd'), appName);
     console.log(chalk.cyan(` - check the README.md`));
-    console.log(chalk.bgGreen('Happy coding!'));
+    console.log(chalk.bgGreen('🥳 Happy coding!'));
     console.log();
 
 }
@@ -664,8 +692,8 @@ const start = async () => {
     const program = new commander.Command(packageJson.name)
         .version(packageJson.version)
         .argument('<project-directory>', 'project name')
-        .action((projectdirectory) => {
-            projectName = projectdirectory;
+        .action((project_directory) => {
+            projectName = project_directory;
         })
         .option('--verbose', 'print additional logs')
         .option('--info', 'print environment debug info')
@@ -685,23 +713,30 @@ const start = async () => {
         .parse(process.argv);
     const info = JSON.parse(await envinfo.run({
         System: ['OS', 'CPU'],
-        Binaries: ['Node', 'npm'],
-        // Browsers: ['Chrome', 'Edge', 'Firefox', 'Safari'],
-        // npmGlobalPackages: ['create-react-app'],
+        Binaries: ['Node', 'npm']
     }, {showNotFound: true, duplicates: true, json: true}));
     const params = program.opts();
     if (!projectName) {
         process.exit(1);
     }
-    const last = await check_client_version('create-react-app');
+    const last = await check_client_version('load-template');
     await check_node_version(info.Binaries.Node.version);
-    console.log(`    Project Information`);
-    console.log(`      - name     ${chalk.green(projectName)}`);
-    console.log(`      - client   ${chalk.green(last)}`);
+    let message=`
+    Project Information
+      - ${'name'.padEnd(10,' ')}  ${chalk.green(projectName)}
+      - ${'client'.padEnd(10,' ')}  ${chalk.green(last)}(remote) | ${chalk.green(packageJson.version)}(local)
+      - ${'os'.padEnd(10,' ')}  ${chalk.green(info.System.OS)}
+      - ${'node'.padEnd(10,' ')}  ${chalk.green(info.Binaries.Node.version)}
+      - ${'npm'.padEnd(10,' ')}  ${chalk.green(info.Binaries.npm.version)}
+    `
     for (const paramsKey in params) {
-        console.log(`      - ${paramsKey} ${chalk.green(params[paramsKey])}`);
+        message+=`  - ${paramsKey.padEnd(10,' ')}  ${chalk.green(params[paramsKey])}`
     }
-    await create_project(projectName, params.verbose, params.template);
+    console.log(message)
+    //cra-template-liaapi-ts
+    let template = params.template ?? 'liaapi-ts';
+    // await create_project(projectName, params.verbose, params.template);
+    await create_project(projectName, {...params,template});
 }
 
 module.exports={
