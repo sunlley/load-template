@@ -498,9 +498,30 @@ const move_template = (appPath, templateName) => {
         fs.removeSync(path.join(appPath, 'README.md'));
         fs.writeFileSync(path.join(appPath, 'README.md'),data.replace("${appName}",appPackage.name));
     }
+    const npmignoreExists = fs.existsSync(path.join(templateDir, 'npmignore'));
+    if (!npmignoreExists) {
+        fs.writeFileSync(path.join(appPath, '.npmignore'), `
+src
+.eslintrc.js
+.gitignore
+gitignore
+tslint.json
+jestconfig.json
+.prettierrc
+package-lock.json
+.idea
+.git
+test
+node_modules
+output
+        `)
+    }else {
+        fs.writeFileSync(path.join(appPath, '.npmignore'), fs.readFileSync(path.join(appPath, 'npmignore'), 'utf8'));
+        fs.removeSync(path.join(appPath, 'npmignore'));
+    }
     const gitignoreExists = fs.existsSync(path.join(templateDir, 'gitignore'));
     if (!gitignoreExists) {
-        fs.writeFileSync(path.join(appPath, 'gitignore'), `
+        fs.writeFileSync(path.join(appPath, '.gitignore'), `
 .idea/
 .vscode/
 node_modules/
@@ -513,8 +534,12 @@ yarn-debug.log*
 yarn-error.log*
 .npm/
         `)
+    }else {
+        fs.writeFileSync(path.join(appPath, '.gitignore'), fs.readFileSync(path.join(appPath, 'gitignore'), 'utf8'));
+        fs.removeSync(path.join(appPath, 'gitignore'));
     }
     fs.removeSync(path.join(appPath, 'node_modules'));
+    fs.removeSync(path.join(appPath, 'package-lock.json'));
 
 }
 

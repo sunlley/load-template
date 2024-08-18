@@ -6,6 +6,7 @@ build/
 *.tgz
 my-app*
 test-app*
+app-test*
 template/src/__tests__/__snapshots__/
 lerna-debug.log
 npm-debug.log*
@@ -13,3 +14,4 @@ yarn-debug.log*
 yarn-error.log*
 /.changelog
 .npm/
+/app-test/
