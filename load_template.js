@@ -79,141 +79,6 @@ const getTemporaryDirectory = () => {
     });
 }
 
-const move_template = (appPath,templateName) => {
-    // console.log('move_template',chalk.green(appPath))
-    // console.log('move_template',chalk.green(templateName))
-    const appPackage = require(path.join(appPath, 'package.json'));
-    const templatePath = path.dirname(
-        require.resolve(`${templateName}/package.json`, { paths: [appPath] }));
-    const templateJsonPath = path.join(templatePath, 'template.json');
-    const templatePackageJsonPath = path.join(templatePath, 'template','src','package.json');
-    // console.log('move_template','template.json',chalk.green(templateJsonPath))
-    // console.log('move_template','package.json ',chalk.green(templatePackageJsonPath))
-    // console.log('move_template','appPackage   ',appPackage)
-
-    let finalPackageJson={
-        ...appPackage
-    }
-    let devDependencies={
-        ...(appPackage.devDependencies??{})
-    };
-    let dependencies={
-        ...(appPackage.dependencies??{})
-    };
-    let scripts={
-        ...(appPackage.scripts??{})
-    };
-    // console.log('move_template','scripts   ',scripts)
-
-
-    let templateJson = {};
-    if (fs.existsSync(templateJsonPath)) {
-        templateJson = require(templateJsonPath);
-    }
-    if (templateJson.dependencies || templateJson.scripts) {
-        console.log();
-        console.log(
-            chalk.red(
-                'Root-level `dependencies` and `scripts` keys in `template.json` were deprecated for Create React App 5.\n' +
-                'This template needs to be updated to use the new `package` key.'
-            )
-        );
-        console.log('For more information, visit https://cra.link/templates');
-    }
-    const templatePackage = templateJson.package || {};
-    if (fs.existsSync(templatePackageJsonPath)) {
-        let json = require(templatePackageJsonPath);
-        finalPackageJson={
-            ...json,
-            ...appPackage,
-        }
-        console.log('move_template','finalPackageJson2   ',finalPackageJson)
-        devDependencies={
-            ...devDependencies,
-            ...(json.devDependencies??{})
-        }
-        dependencies={
-            ...dependencies,
-            ...(json.dependencies??{})
-        }
-        scripts = Object.assign(
-            {
-                ...scripts,
-            },{
-                ...(json.scripts??{})
-            }
-        )
-    }
-    devDependencies={
-        ...devDependencies,
-        ...(templatePackage.devDependencies??{})
-    }
-    dependencies={
-        ...dependencies,
-        ...(templatePackage.dependencies??{})
-    }
-    scripts = Object.assign({
-            ...scripts,
-        },{...(templatePackage.scripts??{})})
-    finalPackageJson.scripts=scripts;
-    let dependenciesKeys=Object.keys(dependencies).sort();
-    let devDependenciesKeys=Object.keys(devDependencies).sort();
-    finalPackageJson.dependencies={}
-    finalPackageJson.devDependencies={};
-    for (const dependenciesKey of dependenciesKeys) {
-        finalPackageJson.dependencies[dependenciesKey]=dependencies[dependenciesKey];
-    }
-    for (const devDependenciesKey of devDependenciesKeys) {
-        finalPackageJson.devDependencies[devDependenciesKey]=devDependencies[devDependenciesKey];
-    }
-
-    fs.writeFileSync(
-        path.join(appPath, 'package.json'),
-        JSON.stringify(finalPackageJson, null, 2) + os.EOL
-    );
-
-    const readmeExists = fs.existsSync(path.join(appPath, 'README.md'));
-    if (readmeExists) {
-        fs.renameSync(
-            path.join(appPath, 'README.md'),
-            path.join(appPath, 'README.old.md')
-        );
-    }
-
-    // Copy the files for the user
-    const templateDir = path.join(templatePath, 'template');
-    if (fs.existsSync(templateDir)) {
-        fs.copySync(templateDir, appPath,{
-            filter:(file)=>{
-                // console.log('copySync filter',file)
-                if (file.endsWith('package.json')){
-                    return  false;
-                }
-                return true;
-            }
-        });
-    } else {
-        console.error(
-            `Could not locate supplied template: ${chalk.green(templateDir)}`
-        );
-        process.exit(1);
-    }
-    const gitignoreExists = fs.existsSync(path.join(appPath, '.gitignore'));
-    if (gitignoreExists) {
-        // Append if there's already a `.gitignore` file there
-        const data = fs.readFileSync(path.join(appPath, 'gitignore'));
-        fs.appendFileSync(path.join(appPath, '.gitignore'), data);
-        fs.unlinkSync(path.join(appPath, 'gitignore'));
-    } else {
-        // Rename gitignore after the fact to prevent npm from renaming it to .npmignore
-        // See: https://github.com/npm/npm/issues/1862
-        fs.moveSync(
-            path.join(appPath, '.gitignore'),
-            []
-        );
-    }
-
-}
 const check_client_version = async (packagename) => {
     return new Promise((resolve, reject) => {
         https.get(
@@ -282,7 +147,7 @@ const check_node_support = (packageName) => {
         process.exit(1);
     }
 }
-const check_project = (name, root) => {
+const check_project = (name, root, cover) => {
     const validationResult = validateProjectName(name);
     if (!validationResult.validForNewPackages) {
         console.error(
@@ -302,22 +167,24 @@ const check_project = (name, root) => {
         process.exit(1);
     }
     let result = fs.pathExistsSync(root)
-    console.log('pathExistsSync', result);
+    // console.log('pathExistsSync', result);
     if (result) {
-        console.error(
-            chalk.red(
-                `Cannot create a project named ${chalk.green(
-                    `"${name}"`
-                )} because of path exists  ${chalk.red('\nPlease choose a different project name.')}`
-            )
-        );
-        process.exit(1);
+        if (cover) {
+            console.log(`  * ${chalk.green('remove old project')}`)
+            fs.removeSync(root);
+        } else {
+            console.error(
+                chalk.red(
+                    `Cannot create a project named ${chalk.green(
+                        `"${name}"`
+                    )} because of path exists  ${chalk.red('\nPlease choose a different project name.')}`
+                )
+            );
+            process.exit(1);
+        }
     }
 }
 
-const get_packagejson_info = () => {
-    return {}
-}
 const get_package_info = (installPackage) => {
     return new Promise((resolve, reject) => {
         if (installPackage.match(/^.+\.(tgz|tar\.gz)$/)) {
@@ -376,24 +243,19 @@ const get_package_info = (installPackage) => {
             ));
             return resolve({name, version});
         } else {
-            https
-                .get(
-                    `https://registry.npmjs.org/${installPackage}`,
-                    res => {
-                        if (res.statusCode === 200) {
-                            let body = '';
-                            res.on('data', data => (body += data));
-                            res.on('end', () => {
-                                let result = JSON.parse(body);
-                                resolve({name: installPackage, version: result.latest});
-                                // console.log(body)
-                                // resolve(JSON.parse(body).latest);
-                            });
-                        } else {
-                            resolve({name: installPackage});
-                        }
+            https.get(`https://registry.npmjs.org/${installPackage}`,
+                res => {
+                    if (res.statusCode === 200) {
+                        let body = '';
+                        res.on('data', data => (body += data));
+                        res.on('end', () => {
+                            let result = JSON.parse(body);
+                            resolve({name: installPackage, version: result.latest});
+                        });
+                    } else {
+                        resolve({name: installPackage});
                     }
-                )
+                })
                 .on('error', () => {
                     // reject();
                     resolve({name: installPackage});
@@ -401,64 +263,19 @@ const get_package_info = (installPackage) => {
         }
     });
 }
-const get_package_from_normal = (version, directory) => {
-    let packageToInstall = 'react-scripts';
-    const validSemver = semver.valid(version);
-    // console.log('validSemver', validSemver, 'version', version)
-    // console.log('validSemver',validSemver)
-    if (validSemver) {
-        packageToInstall += `@${validSemver}`;
-    } else if (version) {
-        if (version[0] === '@' && !version.includes('/')) {
-            packageToInstall += version;
-        } else if (version.match(/^file:/)) {
-            packageToInstall = `file:${path.resolve(
-                directory,
-                version.match(/^file:(.*)?$/)[1]
-            )}`;
-        } else {
-            // for tar.gz or alternative paths
-            packageToInstall = version;
-        }
-    }
-    const scriptsToWarn = [
-        {
-            name: 'react-scripts-ts',
-            message: chalk.yellow(
-                `The react-scripts-ts package is deprecated. TypeScript is now supported natively in Create React App. You can use the ${chalk.green(
-                    '--template typescript'
-                )} option instead when generating your app to include TypeScript support. Would you like to continue using react-scripts-ts?`
-            ),
-        },
-    ];
-
-    for (const script of scriptsToWarn) {
-        if (packageToInstall.startsWith(script.name)) {
-            return prompts({
-                type: 'confirm',
-                name: 'useScript',
-                message: script.message,
-                initial: false,
-            }).then(answer => {
-                if (!answer.useScript) {
-                    process.exit(0);
-                }
-                return packageToInstall;
-            });
-        }
-    }
-
-    return Promise.resolve(packageToInstall);
-}
-const get_package_from_template = (template, directory) => {
-    // console.log('get_package_from_template','template',template)
+const get_template_name = (template, directory) => {
+    // console.log('get_template_name', template, directory);
     let templateToInstall = 'cra-template-liaapi-ts';
     if (template) {
         if (template.match(/^file:/)) {
-            templateToInstall = `file:${path.resolve(
-                directory,
-                template.match(/^file:(.*)?$/)[1]
-            )}`;
+            template = template.replace('file:','')
+            let data = fs.readFileSync(path.resolve(template,'package.json'), 'utf8');
+            data = JSON.parse(data);
+            templateToInstall = data.name;
+            // templateToInstall = `file:${path.resolve(
+            //     directory,
+            //     template.match(/^file:(.*)?$/)[1]
+            // )}`;
         } else if (
             template.includes('://') ||
             template.match(/^.+\.(tgz|tar\.gz)$/)
@@ -466,23 +283,18 @@ const get_package_from_template = (template, directory) => {
             // for tar.gz or alternative paths
             templateToInstall = template;
         } else {
-            if (template.indexOf('@')>=0){
+            if (template.indexOf('@') >= 0) {
                 // Add prefix 'cra-template-' to non-prefixed templates, leaving any
                 // @scope/ and @version intact.
                 const packageMatch = template.match(/^(@[^/]+\/)?([^@]+)?(@.+)?$/);
                 const scope = packageMatch[1] || '';
                 const templateName = packageMatch[2] || '';
                 const version = packageMatch[3] || '';
-                console.log('get_package_from_template','packageMatch',packageMatch)
+                // console.log('get_package_from_template', 'packageMatch', packageMatch)
                 if (
                     templateName === templateToInstall ||
                     templateName.startsWith(`${templateToInstall}-`)
                 ) {
-                    // Covers:
-                    // - cra-template
-                    // - @SCOPE/cra-template
-                    // - cra-template-NAME
-                    // - @SCOPE/cra-template-NAME
                     templateToInstall = `${scope}${templateName}${version}`;
                 } else if (version && !scope && !templateName) {
                     // Covers using @SCOPE only
@@ -493,130 +305,46 @@ const get_package_from_template = (template, directory) => {
                     // - @SCOPE/NAME
                     templateToInstall = `${scope}${templateToInstall}-${templateName}${version}`;
                 }
-            }else if (template.indexOf('cra-template-')>=0){
+            } else if (template.indexOf('cra-template-') >= 0) {
                 templateToInstall = template;
-            }else {
+            } else {
                 templateToInstall = `cra-template-${template}`;
             }
 
         }
     }
-
-    console.log('get_package_from_template',chalk.green(templateToInstall))
+    // console.log('get_template_name', chalk.green(templateToInstall))
     return Promise.resolve(templateToInstall);
-
-}
-const set_caret_range = (dependencies, name) => {
-    const version = dependencies[name];
-
-    if (typeof version === 'undefined') {
-        console.error(chalk.red(`Missing ${name} dependency in package.json`));
-        process.exit(1);
-    }
-
-    let patchedVersion = `^${version}`;
-
-    if (!semver.validRange(patchedVersion)) {
-        console.error(
-            `Unable to patch ${name} dependency version because version ${chalk.red(
-                version
-            )} will become invalid ${chalk.red(patchedVersion)}`
-        );
-        patchedVersion = version;
-    }
-
-    dependencies[name] = patchedVersion;
-}
-const set_deps_for_runtime = (packageName) => {
-    const packagePath = path.join(process.cwd(), 'package.json');
-    const packageJson = require(packagePath);
-
-    if (typeof packageJson.dependencies === 'undefined') {
-        console.error(chalk.red('Missing dependencies in package.json'));
-        process.exit(1);
-    }
-
-    const packageVersion = packageJson.dependencies[packageName];
-    if (typeof packageVersion === 'undefined') {
-        console.error(chalk.red(`Unable to find ${packageName} in package.json`));
-        process.exit(1);
-    }
-
-    set_caret_range(packageJson.dependencies, 'react');
-    set_caret_range(packageJson.dependencies, 'react-dom');
-
-    fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + os.EOL);
-}
-
-const install = (root, dependencies, verbose) => {
-    return new Promise((resolve, reject) => {
-        let command = 'npm';
-        let args = [
-            'install',
-            '--no-audit', // https://github.com/facebook/create-react-app/issues/11174
-            '--save',
-            '--save-exact',
-            '--loglevel',
-            'error',
-        ].concat(dependencies);
-        if (verbose) {
-            args.push('--verbose');
-        }
-        const child = spawn(command, args, {stdio: 'inherit'});
-        child.on('close', code => {
-            if (code !== 0) {
-                reject({
-                    command: `${command} ${args.join(' ')}`,
-                });
-                return;
-            }
-            resolve();
-        });
-    });
-};
-const execute_script = (root,template) => {
-    // console.log('root',root)
-    // console.log('template',template)
-    return new Promise((resolve, reject) => {
-        move_template(root,template)
-        resolve()
-    });
 }
 /**
  *
- * @param name
- * @param params
+ * @param root
+ * @param language
+ * @param isPrivate
+ * @returns {{appName: string, packageJson: {private, devDependencies: {}, name: string, eslintConfig: {extends: *[]}, version: string, dependencies: {}}, tsconfigJson: {include: string[], exclude: string[], compilerOptions: {experimentalDecorators: boolean, types: string[], declarationDir: string, lib: string[], sourceMap: boolean, module: string, allowSyntheticDefaultImports: boolean, importHelpers: boolean, rootDir: string, resolveJsonModule: boolean, declaration: boolean, jsx: string, target: string, esModuleInterop: boolean, outDir: string, baseUrl: string, skipLibCheck: boolean, moduleResolution: string, strict: boolean}}}}
  */
-const create_project = async (name, params) => {
-    let {verbose, template}=params;
-    const root = path.resolve(name);
+const check_default_json = (root, language, isPrivate) => {
     const appName = path.basename(root);
-    check_project(name,root);
-    fs.ensureDirSync(name,{});
-    console.log(`Creating a new Application in ${chalk.green(root)}.`);
-    const packageJson = {
+    let packageJson = {
         name: appName,
         version: '0.1.0',
-        private: true,
+        private: isPrivate,
         devDependencies: {},
         dependencies: {},
         eslintConfig: {
             "extends": []
         }
-
-    };
-    const originalDirectory = process.cwd();
-    process.chdir(root);
-    let templatePackageName = await get_package_from_template(template, originalDirectory);
-    if (templatePackageName.endsWith('-ts')){
-        packageJson.devDependencies={
-            "@types/node": "^22.1.0",
-            "nodemon": "^3.1.4",
-            "ts-node": "^10.9.2",
-            "tslib": "^2.6.3",
-            "typescript": "^5.5.4"
+    }
+    let tsconfigJson;
+    if (language === 'ts') {
+        packageJson.devDependencies = {
+            // "@types/node": "^22.1.0",
+            // "nodemon": "^3.1.4",
+            // "ts-node": "^10.9.2",
+            // "tslib": "^2.6.3",
+            // "typescript": "^5.5.4"
         }
-        const tsconfigJson = {
+        tsconfigJson = {
             "compilerOptions": {
                 "experimentalDecorators": true,
                 "module": "CommonJS",
@@ -659,20 +387,199 @@ const create_project = async (name, params) => {
                 "node_modules"
             ]
         };
-        fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfigJson, null, 2) + os.EOL);
+        // fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfigJson, null, 2) + os.EOL);
     }
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(packageJson, null, 2) + os.EOL);
-    let templateInfo = await get_package_info(templatePackageName);
-    const dependencies = [...(Object.keys(packageJson.dependencies)), templateInfo.name];
-    console.log(`Installing dependencies using ${chalk.cyan('npm')}.`)
-    for (const dependency of dependencies) {
-        if (dependency){
-            console.log(`    - ${chalk.cyan(dependency)}`)
+    return {
+        appName, packageJson, tsconfigJson
+    };
+}
+const move_template = (appPath, templateName) => {
+    const appPackage = require(path.join(appPath, 'package.json'));
+    const templatePath = path.dirname(require.resolve(`${templateName}/package.json`, {paths: [appPath]}));
+    const templateTemplateJsonPath = path.join(templatePath, 'template.json');
+    const templatePackageJsonPath = path.join(templatePath, 'template', 'src', 'package.json');
+
+    // console.log('move_template','templateJsonPath',chalk.green(templateTemplateJsonPath))
+    // console.log('move_template','packageJsonPath ',chalk.green(templatePackageJsonPath))
+    // console.log('move_template','appPackage      ',appPackage)
+    let finalPackageJson = {...appPackage}
+    let devDependencies = {};
+    let dependencies = {};
+    let scripts = {...(appPackage.scripts ?? {})};
+    // console.log('move_template','scripts   ',scripts)
+    let templateJson = {};
+    if (fs.existsSync(templateTemplateJsonPath)) {
+        templateJson = require(templateTemplateJsonPath);
+    }
+    if (fs.existsSync(templatePackageJsonPath)) {
+        let json = require(templatePackageJsonPath);
+        finalPackageJson = {
+            ...json,
+            ...appPackage,
+        }
+        console.log('move_template', 'finalPackageJson2   ', finalPackageJson)
+        devDependencies = {
+            ...devDependencies,
+            ...(json.devDependencies ?? {})
+        }
+        dependencies = {
+            ...dependencies,
+            ...(json.dependencies ?? {})
+        }
+        scripts = {
+            ...scripts,
+            ...(json.scripts ?? {})
         }
     }
-    await install(root,dependencies,verbose);
-    await execute_script(root,templateInfo.name);
-    await install(root,[],verbose);
+    const templatePackage = templateJson.package;
+    if (!templatePackage) {
+        console.log(
+            chalk.yellow(
+                'Root-level `dependencies` and `scripts` keys in `template.json` were deprecated for Create React App 5.\n'
+            )
+        );
+        console.log('For more information, visit https://cra.link/templates');
+
+    } else {
+        devDependencies = {
+            ...devDependencies,
+            ...(templatePackage.devDependencies ?? {})
+        }
+        dependencies = {
+            ...dependencies,
+            ...(templatePackage.dependencies ?? {})
+        }
+        scripts = {
+            ...scripts,
+            ...(templatePackage.scripts ?? {})
+        }
+        Object.keys(templatePackage)
+            .filter((key) => PACKAGE_BLACKLIST.indexOf(key) < 0)
+            .forEach((key) => {
+                finalPackageJson[key] = templatePackage[key];
+            })
+    }
+    finalPackageJson.scripts = scripts;
+    finalPackageJson.dependencies = {}
+    finalPackageJson.devDependencies = {};
+    Object.keys(dependencies).sort().forEach((key) => {
+        finalPackageJson.dependencies[key] = dependencies[key];
+    })
+    Object.keys(devDependencies).sort().forEach((key) => {
+        finalPackageJson.devDependencies[key] = devDependencies[key];
+    })
+    fs.writeFileSync(path.join(appPath, 'package.json'), JSON.stringify(finalPackageJson, null, 2) + os.EOL);
+
+    // Copy the files for the user
+    const templateDir = path.join(templatePath, 'template');
+    if (fs.existsSync(templateDir)) {
+        fs.copySync(templateDir, appPath, {
+            filter: (file) => {
+                // console.log('copySync filter',file)
+                if (file.endsWith('package.json')) {
+                    return false;
+                }
+                if (file.endsWith('README.md')) {
+                    return false;
+                }
+                return true;
+            }
+        });
+    } else {
+        console.error(
+            `Could not locate supplied template: ${chalk.green(templateDir)}`
+        );
+        process.exit(1);
+    }
+    const readmeExists = fs.existsSync(path.join(templateDir, 'README.md'));
+    if(readmeExists){
+        let data = fs.readFileSync(path.join(templateDir, 'README.md'),'utf-8');
+        fs.removeSync(path.join(appPath, 'README.md'));
+        fs.writeFileSync(path.join(appPath, 'README.md'),data.replace("${appName}",appPackage.name));
+    }
+    const gitignoreExists = fs.existsSync(path.join(templatePath, 'gitignore'));
+    if (!gitignoreExists) {
+        fs.writeFileSync(path.join(appPath, 'gitignore'), `
+.idea/
+.vscode/
+node_modules/
+build/
+.DS_Store
+*.tgz
+lerna-debug.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+        `)
+    }
+    fs.removeSync(path.join(appPath, 'node_modules'));
+
+}
+
+
+const install = (root, dependencies, verbose, loglevel) => {
+    if (!loglevel) {
+        loglevel = 'error'
+    }
+    return new Promise((resolve, reject) => {
+        let command = 'npm';
+        let args = [
+            'install',
+            '--no-audit', // https://github.com/facebook/create-react-app/issues/11174
+            '--save',
+            '--save-exact',
+            '--loglevel',
+            loglevel,
+        ].concat(dependencies);
+        if (verbose) {
+            args.push('--verbose');
+        }
+        const child = spawn(command, args, {stdio: 'inherit'});
+        child.on('close', code => {
+            if (code !== 0) {
+                reject({
+                    command: `${command} ${args.join(' ')}`,
+                });
+                return;
+            }
+            resolve();
+        });
+    });
+};
+const execute_script = (root, template) => {
+    return new Promise((resolve, reject) => {
+        move_template(root, template)
+        resolve()
+    });
+}
+/**
+ *
+ * @param name
+ * @param params
+ */
+const create_project = async (name, params) => {
+    let {verbose, template, cover, language, private: isPrivate, loglevel} = params;
+    const root = path.resolve(name);
+    check_project(name, root, cover);
+    fs.ensureDirSync(name, {});
+    console.log(`Creating a new Application in ${chalk.green(root)}.`);
+    const originalDirectory = process.cwd();
+    process.chdir(root);
+    let {packageJson, appName} = check_default_json(root, language, isPrivate);
+    let templateName = await get_template_name(template, originalDirectory);
+    let templateInfo = await get_package_info(templateName);
+    const dependencies = [...(Object.keys(packageJson.dependencies)), templateInfo.name];
+    for (const dependency of dependencies) {
+        if (dependency) {
+            console.log(`      - ${chalk.cyan(dependency)}`)
+        }
+    }
+
+    console.log(`Installing template for temporary using ${chalk.cyan('npm')}.`)
+    await install(root, dependencies, verbose, loglevel);
+    await execute_script(root, templateInfo.name);
     const appPackage = require(path.join(root, 'package.json'));
     console.log(chalk.bgGreen(`😁 Success! `));
     console.log(`Created ${appName} at ${chalk.cyan(root)}`);
@@ -682,7 +589,9 @@ const create_project = async (name, params) => {
     }
     console.log('-------------------------------')
     console.log(chalk.cyan(' - cd'), appName);
+    console.log(chalk.cyan(' - npm install'));
     console.log(chalk.cyan(` - check the README.md`));
+    console.log('-------------------------------')
     console.log(chalk.bgGreen('🥳 Happy coding!'));
     console.log();
 
@@ -699,6 +608,10 @@ const start = async () => {
         .option('--info', 'print environment debug info')
         .option('--template <path-to-template>', 'specify a template for the created project')
         .option('--use-pnp')
+        .option('--language', 'Development language, value ts or js, default ts', 'ts')
+        .option('--cover', 'If the project exists, a new one will be created and the old one will be overwritten')
+        .option('--private', 'Is the project privately owned', true)
+        .option('--loglevel', 'loglevel', 'error')
         .allowUnknownOption()
         .on('--help', () => {
             console.log(`    Only ${chalk.green('<project-directory>')} is required.`);
@@ -721,24 +634,22 @@ const start = async () => {
     }
     const last = await check_client_version('load-template');
     await check_node_version(info.Binaries.Node.version);
-    let message=`
+    let message = `
     Project Information
-      - ${'name'.padEnd(10,' ')}  ${chalk.green(projectName)}
-      - ${'client'.padEnd(10,' ')}  ${chalk.green(last)}(remote) | ${chalk.green(packageJson.version)}(local)
-      - ${'os'.padEnd(10,' ')}  ${chalk.green(info.System.OS)}
-      - ${'node'.padEnd(10,' ')}  ${chalk.green(info.Binaries.Node.version)}
-      - ${'npm'.padEnd(10,' ')}  ${chalk.green(info.Binaries.npm.version)}
-    `
+      - ${'name'.padEnd(10, ' ')}  ${chalk.green(projectName)}
+      - ${'client'.padEnd(10, ' ')}  ${chalk.green(last)}(remote) | ${chalk.green(packageJson.version)}(local)
+      - ${'os'.padEnd(10, ' ')}  ${chalk.green(info.System.OS)}
+      - ${'node'.padEnd(10, ' ')}  ${chalk.green(info.Binaries.Node.version)}
+      - ${'npm'.padEnd(10, ' ')}  ${chalk.green(info.Binaries.npm.version)}`
     for (const paramsKey in params) {
-        message+=`  - ${paramsKey.padEnd(10,' ')}  ${chalk.green(params[paramsKey])}`
+        message += `  
+      - ${paramsKey.padEnd(10, ' ')}  ${chalk.green(params[paramsKey])}`
     }
     console.log(message)
-    //cra-template-liaapi-ts
-    let template = params.template ?? 'liaapi-ts';
-    // await create_project(projectName, params.verbose, params.template);
-    await create_project(projectName, {...params,template});
+    const template = params.template ?? 'liaapi-ts';
+    await create_project(projectName, {...params, template});
 }
 
-module.exports={
+module.exports = {
     start
 }

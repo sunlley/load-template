@@ -11,5 +11,4 @@ npm install -g load-template
 // create a project
 npx load-template <your-project> --template <template-name>
 
-
 ```
