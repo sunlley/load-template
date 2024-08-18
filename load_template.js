@@ -498,7 +498,7 @@ const move_template = (appPath, templateName) => {
         fs.removeSync(path.join(appPath, 'README.md'));
         fs.writeFileSync(path.join(appPath, 'README.md'),data.replace("${appName}",appPackage.name));
     }
-    const gitignoreExists = fs.existsSync(path.join(templatePath, 'gitignore'));
+    const gitignoreExists = fs.existsSync(path.join(templateDir, 'gitignore'));
     if (!gitignoreExists) {
         fs.writeFileSync(path.join(appPath, 'gitignore'), `
 .idea/
