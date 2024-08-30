@@ -15,6 +15,7 @@ const hyperquest = require("hyperquest");
 const {unpack} = require("tar-pack");
 const spawn = require("cross-spawn");
 const tmp = require("tmp");
+const debug = require("semver/internal/debug");
 const PACKAGE_BLACKLIST = [
     'name',
     'version',
@@ -40,6 +41,13 @@ const PACKAGE_BLACKLIST = [
     'private',
     'publishConfig',
 ];
+
+let isDebug=false;
+const debugLog = (...args) => {
+    if (isDebug){
+        console.log( chalk.bgBlue('[DEBUG LOG]'),new Date(),...args)
+    }
+}
 
 const extractStream = (stream, dest) => {
     return new Promise((resolve, reject) => {
@@ -95,12 +103,13 @@ const check_client_version = async (packagename) => {
                 }
             }
         ).on('error', () => {
-            reject(new Error('Http error: check client version request failed'));
+            reject(new Error(`Http error: check client version request failed with ${packagename}`));
         });
     });
 }
 const check_node_version = (version) => {
     const target_version = '18';
+    debugLog('check node version',`local(${version})|target(${target_version})`)
     const unsupportedNodeVersion = !semver.satisfies(
         // Coerce strings with metadata (i.e. `15.0.0-nightly`).
         semver.coerce(version),
@@ -185,8 +194,10 @@ const check_project = (name, root, cover) => {
     }
 }
 
-const get_package_info = (installPackage) => {
+const get_package_info = (installPackage,type) => {
     return new Promise((resolve, reject) => {
+        debugLog('get_package_info','start', installPackage);
+
         if (installPackage.match(/^.+\.(tgz|tar\.gz)$/)) {
             return getTemporaryDirectory()
                 .then(obj => {
@@ -264,57 +275,37 @@ const get_package_info = (installPackage) => {
     });
 }
 const get_template_name = (template, directory) => {
-    // console.log('get_template_name', template, directory);
-    let templateToInstall = 'cra-template-liaapi-ts';
+    debugLog('get_template_name','start', template, directory);
+    let _template=template;
+    let name='cra-template-liaapi-ts';
+    let type='http';
     if (template) {
         if (template.match(/^file:/)) {
             template = template.replace('file:','')
             let data = fs.readFileSync(path.resolve(template,'package.json'), 'utf8');
             data = JSON.parse(data);
-            templateToInstall = data.name;
-            // templateToInstall = `file:${path.resolve(
-            //     directory,
-            //     template.match(/^file:(.*)?$/)[1]
-            // )}`;
+            name = data.name;
+            type='file';
         } else if (
             template.includes('://') ||
             template.match(/^.+\.(tgz|tar\.gz)$/)
         ) {
+            name=template;
+            type='http';
             // for tar.gz or alternative paths
-            templateToInstall = template;
         } else {
-            if (template.indexOf('@') >= 0) {
-                // Add prefix 'cra-template-' to non-prefixed templates, leaving any
-                // @scope/ and @version intact.
-                const packageMatch = template.match(/^(@[^/]+\/)?([^@]+)?(@.+)?$/);
-                const scope = packageMatch[1] || '';
-                const templateName = packageMatch[2] || '';
-                const version = packageMatch[3] || '';
-                // console.log('get_package_from_template', 'packageMatch', packageMatch)
-                if (
-                    templateName === templateToInstall ||
-                    templateName.startsWith(`${templateToInstall}-`)
-                ) {
-                    templateToInstall = `${scope}${templateName}${version}`;
-                } else if (version && !scope && !templateName) {
-                    // Covers using @SCOPE only
-                    templateToInstall = `${version}/${templateToInstall}`;
-                } else {
-                    // Covers templates without the `cra-template` prefix:
-                    // - NAME
-                    // - @SCOPE/NAME
-                    templateToInstall = `${scope}${templateToInstall}-${templateName}${version}`;
-                }
-            } else if (template.indexOf('cra-template-') >= 0) {
-                templateToInstall = template;
+            if (template.indexOf('cra-template-') >= 0) {
+                name = template;
+                type='http';
             } else {
-                templateToInstall = `cra-template-${template}`;
+                name = `cra-template-${template}`;
+                type='http';
             }
 
         }
     }
-    // console.log('get_template_name', chalk.green(templateToInstall))
-    return Promise.resolve(templateToInstall);
+    debugLog('get_template_name','done', name, type);
+    return Promise.resolve({name, type,value:_template});
 }
 /**
  *
@@ -389,20 +380,24 @@ const check_default_json = (root, language, isPrivate) => {
         };
         // fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify(tsconfigJson, null, 2) + os.EOL);
     }
+    debugLog('check_default_json',language)
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(packageJson, null, 2) + os.EOL);
     return {
         appName, packageJson, tsconfigJson
     };
 }
 const move_template = (appPath, templateName) => {
+    debugLog('move_template',templateName)
     const appPackage = require(path.join(appPath, 'package.json'));
     const templatePath = path.dirname(require.resolve(`${templateName}/package.json`, {paths: [appPath]}));
     const templateTemplateJsonPath = path.join(templatePath, 'template.json');
-    const templatePackageJsonPath = path.join(templatePath, 'template', 'src', 'package.json');
+    const templatePackageJsonPath = path.join(templatePath, 'template', 'package.json');
 
     // console.log('move_template','templateJsonPath',chalk.green(templateTemplateJsonPath))
     // console.log('move_template','packageJsonPath ',chalk.green(templatePackageJsonPath))
     // console.log('move_template','appPackage      ',appPackage)
+
+    // return
     let finalPackageJson = {...appPackage}
     let devDependencies = {};
     let dependencies = {};
@@ -418,7 +413,6 @@ const move_template = (appPath, templateName) => {
             ...json,
             ...appPackage,
         }
-        console.log('move_template', 'finalPackageJson2   ', finalPackageJson)
         devDependencies = {
             ...devDependencies,
             ...(json.devDependencies ?? {})
@@ -499,40 +493,45 @@ const move_template = (appPath, templateName) => {
         fs.writeFileSync(path.join(appPath, 'README.md'),data.replace("${appName}",appPackage.name));
     }
     const npmignoreExists = fs.existsSync(path.join(templateDir, 'npmignore'));
-    if (!npmignoreExists) {
-        fs.writeFileSync(path.join(appPath, '.npmignore'), `
-src
-.eslintrc.js
-.gitignore
-gitignore
-tslint.json
-jestconfig.json
-.prettierrc
-package-lock.json
-.idea
-.git
-test
-node_modules
-output
-        `)
-    }else {
+    if (npmignoreExists) {
         fs.writeFileSync(path.join(appPath, '.npmignore'), fs.readFileSync(path.join(appPath, 'npmignore'), 'utf8'));
         fs.removeSync(path.join(appPath, 'npmignore'));
     }
     const gitignoreExists = fs.existsSync(path.join(templateDir, 'gitignore'));
     if (!gitignoreExists) {
         fs.writeFileSync(path.join(appPath, '.gitignore'), `
-.idea/
-.vscode/
-node_modules/
-build/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+
+# testing
+/coverage
+
+# production
+/build/
+/lib/
+/dist/
+/cache/
+/logs/
+/output/
+/build
+/lib
+/dist
+/cache
+/logs
+/output
+
+
+# misc
+.idea
 .DS_Store
-*.tgz
-lerna-debug.log
+package-lock.json
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.npm/
+
         `)
     }else {
         fs.writeFileSync(path.join(appPath, '.gitignore'), fs.readFileSync(path.join(appPath, 'gitignore'), 'utf8'));
@@ -540,6 +539,7 @@ yarn-error.log*
     }
     fs.removeSync(path.join(appPath, 'node_modules'));
     fs.removeSync(path.join(appPath, 'package-lock.json'));
+    debugLog('move_template','done')
 
 }
 
@@ -587,23 +587,32 @@ const execute_script = (root, template) => {
 const create_project = async (name, params) => {
     let {verbose, template, cover, language, private: isPrivate, loglevel} = params;
     const root = path.resolve(name);
+    debugLog('create_project',chalk.green(root));
     check_project(name, root, cover);
     fs.ensureDirSync(name, {});
     console.log(`Creating a new Application in ${chalk.green(root)}.`);
     const originalDirectory = process.cwd();
     process.chdir(root);
     let {packageJson, appName} = check_default_json(root, language, isPrivate);
-    let templateName = await get_template_name(template, originalDirectory);
-    let templateInfo = await get_package_info(templateName);
-    const dependencies = [...(Object.keys(packageJson.dependencies)), templateInfo.name];
+    let templateInfo= await get_template_name(template, originalDirectory);
+    const dependencies = [...(Object.keys(packageJson.dependencies))];
+    if (templateInfo.type==='http'){
+        let templatePackageInfo = await get_package_info(templateInfo.value);
+        debugLog('get_package_info','done', templatePackageInfo);
+        dependencies.push(templatePackageInfo.name)
+    }else {
+        dependencies.push(templateInfo.value)
+    }
     for (const dependency of dependencies) {
         if (dependency) {
             console.log(`      - ${chalk.cyan(dependency)}`)
         }
     }
+    debugLog('install template dependencies',dependencies)
 
     console.log(`Installing template for temporary using ${chalk.cyan('npm')}.`)
     await install(root, dependencies, verbose, loglevel);
+    // return
     await execute_script(root, templateInfo.name);
     const appPackage = require(path.join(root, 'package.json'));
     console.log(chalk.bgGreen(`😁 Success! `));
@@ -637,6 +646,7 @@ const start = async () => {
         .option('--cover', 'If the project exists, a new one will be created and the old one will be overwritten')
         .option('--private', 'Is the project privately owned', true)
         .option('--loglevel', 'loglevel', 'error')
+        .option('--debug', 'develop mode', false)
         .allowUnknownOption()
         .on('--help', () => {
             console.log(`    Only ${chalk.green('<project-directory>')} is required.`);
@@ -657,7 +667,11 @@ const start = async () => {
     if (!projectName) {
         process.exit(1);
     }
-    const last = await check_client_version('load-template');
+    let last = packageJson.version;
+    isDebug=params.debug;
+    if (!isDebug){
+        last = await check_client_version('load-template');
+    }
     await check_node_version(info.Binaries.Node.version);
     let message = `
     Project Information
@@ -672,6 +686,7 @@ const start = async () => {
     }
     console.log(message)
     const template = params.template ?? 'liaapi-ts';
+    debugLog('template: ' + params.template);
     await create_project(projectName, {...params, template});
 }
 
